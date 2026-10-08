@@ -1,0 +1,8 @@
+fastapi==0.142.4
+uvicorn==0.54.0
+django==6.0
+
+pydantic
+SQLAlchemy
+alembic
+Mysql
