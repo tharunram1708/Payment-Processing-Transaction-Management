@@ -10,4 +10,5 @@ urlpatterns = [
     path("logout/", views.logout_page, name="logout-page"),
     path("cards/", views.card_list_page, name="card-list-page"),
     path("cards/<int:card_id>/delete/", views.delete_card_page, name="delete-card-page"),
+    path("transactions/export.csv", views.export_payment_history_csv, name="payment-history-export"),
 ]

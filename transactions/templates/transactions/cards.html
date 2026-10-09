@@ -1,78 +1,219 @@
 {% extends "transactions/base.html" %}
 
-{% block title %}Saved Cards | Card Management{% endblock %}
+{% block title %}Dashboard | Payments Dashboard{% endblock %}
 
 {% block content %}
 <div class="header-row">
     <div>
-        <h1>Saved Cards</h1>
-        <p class="muted">Only masked card numbers and last 4 digits are stored.</p>
+        <h1>Payment Dashboard</h1>
+        <p class="muted">Create payments, manage saved cards, and review recent transaction activity.</p>
+    </div>
+    <div class="actions">
+        <a class="button secondary" href="#add-card">Add Card</a>
+        {% if request.user.is_staff %}
+            <a class="button secondary" href="{% url 'admin:index' %}">Admin Panel</a>
+        {% endif %}
+        <a class="button" href="{% url 'payment-history-export' %}">Export CSV</a>
     </div>
 </div>
 
-<section class="panel">
-    <h1>Add Card</h1>
-    <form method="post">
-        {% csrf_token %}
-        <div class="grid">
-            <div class="field">
-                <label for="card_number">Card number</label>
-                <input id="card_number" name="card_number" inputmode="numeric" autocomplete="cc-number" required>
+<section class="stats" aria-label="Payment summary">
+    <article class="stat">
+        <p class="stat-label">Saved cards</p>
+        <p class="stat-value">{{ stats.card_count }}</p>
+    </article>
+    <article class="stat">
+        <p class="stat-label">Transactions</p>
+        <p class="stat-value">{{ stats.transaction_count }}</p>
+    </article>
+    <article class="stat">
+        <p class="stat-label">Successful</p>
+        <p class="stat-value">{{ stats.success_count }}</p>
+    </article>
+    <article class="stat">
+        <p class="stat-label">Successful volume</p>
+        <p class="stat-value">INR {{ stats.total_success_amount }}</p>
+    </article>
+</section>
+
+{% if admin_stats %}
+    <section class="panel admin-panel" aria-label="Admin panel">
+        <div class="header-row">
+            <div>
+                <h2 class="panel-title">Admin Panel</h2>
+                <p class="muted">Manage users, cards, transactions, and payment reports.</p>
             </div>
-            <div class="field">
-                <label for="card_holder_name">Card holder name</label>
-                <input id="card_holder_name" name="card_holder_name" autocomplete="cc-name" required>
-            </div>
-            <div class="field">
-                <label for="card_type">Card type</label>
-                <select id="card_type" name="card_type" required>
-                    <option value="CREDIT">Credit</option>
-                    <option value="DEBIT">Debit</option>
-                </select>
-            </div>
-            <div class="grid">
+            <a class="button" href="{% url 'admin:index' %}">Open Admin</a>
+        </div>
+        <div class="admin-links">
+            <a class="admin-link" href="{% url 'admin:auth_user_changelist' %}">
+                <strong>{{ admin_stats.user_count }}</strong>
+                <span class="meta">Users</span>
+            </a>
+            <a class="admin-link" href="{% url 'admin:transactions_savedcard_changelist' %}">
+                <strong>{{ admin_stats.card_count }}</strong>
+                <span class="meta">Saved cards</span>
+            </a>
+            <a class="admin-link" href="{% url 'admin:transactions_transaction_changelist' %}">
+                <strong>{{ admin_stats.transaction_count }}</strong>
+                <span class="meta">Transactions</span>
+            </a>
+            <a class="admin-link" href="{% url 'admin:transactions_transaction_daily_summary' %}">
+                <strong>{{ admin_stats.failed_count }}</strong>
+                <span class="meta">Failed payments</span>
+            </a>
+        </div>
+    </section>
+{% endif %}
+
+<div class="dashboard-grid">
+    <div class="stack">
+        <section class="panel">
+            <h2 class="panel-title">Make Payment</h2>
+            <p class="muted">Payment details are processed through the same validation rules as the API.</p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="form_action" value="make_payment">
+                <div class="grid">
+                    <div class="field">
+                        <label for="amount">Amount</label>
+                        <input id="amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required>
+                    </div>
+                    <div class="field">
+                        <label for="currency">Currency</label>
+                        <input id="currency" name="currency" maxlength="3" value="INR" required>
+                    </div>
+                </div>
                 <div class="field">
-                    <label for="expiry_month">Month</label>
-                    <input id="expiry_month" name="expiry_month" type="number" min="1" max="12" autocomplete="cc-exp-month" required>
+                    <label for="payment_card_number">Card number</label>
+                    <input id="payment_card_number" name="payment_card_number" inputmode="numeric" autocomplete="cc-number" required>
+                </div>
+                <div class="field">
+                    <label for="payment_card_holder_name">Card holder name</label>
+                    <input id="payment_card_holder_name" name="payment_card_holder_name" autocomplete="cc-name" required>
+                </div>
+                <div class="grid">
+                    <div class="field">
+                        <label for="payment_expiry_month">Month</label>
+                        <input id="payment_expiry_month" name="payment_expiry_month" type="number" min="1" max="12" autocomplete="cc-exp-month" required>
+                    </div>
+                    <div class="field">
+                        <label for="payment_expiry_year">Year</label>
+                        <input id="payment_expiry_year" name="payment_expiry_year" type="number" min="{{ current_year }}" autocomplete="cc-exp-year" required>
+                    </div>
+                </div>
+                <button class="button full" type="submit">Process Payment</button>
+            </form>
+        </section>
+
+        <section class="panel" id="add-card">
+            <h2 class="panel-title">Add Card</h2>
+            <p class="muted">Only masked card numbers and last 4 digits are stored.</p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="form_action" value="save_card">
+                <div class="field">
+                    <label for="card_number">Card number</label>
+                    <input id="card_number" name="card_number" inputmode="numeric" autocomplete="cc-number" required>
+                </div>
+                <div class="field">
+                    <label for="card_holder_name">Card holder name</label>
+                    <input id="card_holder_name" name="card_holder_name" autocomplete="cc-name" required>
+                </div>
+                <div class="grid">
+                    <div class="field">
+                        <label for="card_type">Card type</label>
+                        <select id="card_type" name="card_type" required>
+                            <option value="CREDIT">Credit</option>
+                            <option value="DEBIT">Debit</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="expiry_month">Month</label>
+                        <input id="expiry_month" name="expiry_month" type="number" min="1" max="12" autocomplete="cc-exp-month" required>
+                    </div>
                 </div>
                 <div class="field">
                     <label for="expiry_year">Year</label>
                     <input id="expiry_year" name="expiry_year" type="number" min="{{ current_year }}" autocomplete="cc-exp-year" required>
                 </div>
-            </div>
-        </div>
-        <button class="button" type="submit">Save Card</button>
-    </form>
-</section>
-
-<section class="panel" style="margin-top: 20px;">
-    <div class="header-row">
-        <div>
-            <h1>Your Cards</h1>
-            <p class="muted">{{ cards|length }} saved card{{ cards|length|pluralize }}</p>
-        </div>
+                <button class="button secondary" type="submit">Save Card</button>
+            </form>
+        </section>
     </div>
 
-    {% if cards %}
-        <div class="card-list">
-            {% for card in cards %}
-                <article class="card-item">
-                    <div>
-                        <p class="card-number">{{ card.masked_card_number }}</p>
-                        <div class="meta">
-                            {{ card.card_type|title }} ending {{ card.last4 }} · Expires {{ card.expiry_month }}/{{ card.expiry_year }}
-                        </div>
-                        <div class="meta">{{ card.card_holder_name }}</div>
-                    </div>
-                    <form class="inline-form" method="post" action="{% url 'delete-card-page' card.id %}">
-                        {% csrf_token %}
-                        <button class="button danger" type="submit">Delete</button>
-                    </form>
-                </article>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="empty">No cards saved yet.</div>
-    {% endif %}
-</section>
+    <div class="stack">
+        <section class="panel">
+            <div class="header-row">
+                <div>
+                    <h2 class="panel-title">Recent Transactions</h2>
+                    <p class="muted">{{ stats.transaction_count }} total transaction{{ stats.transaction_count|pluralize }}</p>
+                </div>
+                <a class="button secondary" href="{% url 'payment-history-export' %}">Export CSV</a>
+            </div>
+
+            {% if recent_transactions %}
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Transaction</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Card</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in recent_transactions %}
+                                <tr>
+                                    <td>{{ transaction.transaction_id|stringformat:".8s" }}</td>
+                                    <td>{{ transaction.currency }} {{ transaction.amount }}</td>
+                                    <td>
+                                        <span class="status {{ transaction.status|lower }}">{{ transaction.status|title }}</span>
+                                    </td>
+                                    <td>{{ transaction.masked_card_number }}</td>
+                                    <td>{{ transaction.created_at|date:"M j, H:i" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty">No transactions yet.</div>
+            {% endif %}
+        </section>
+
+        <section class="panel">
+            <div class="header-row">
+                <div>
+                    <h2 class="panel-title">Saved Cards</h2>
+                    <p class="muted">{{ cards|length }} saved card{{ cards|length|pluralize }}</p>
+                </div>
+            </div>
+
+            {% if cards %}
+                <div class="card-list">
+                    {% for card in cards %}
+                        <article class="card-item">
+                            <div>
+                                <p class="card-number">{{ card.masked_card_number }}</p>
+                                <div class="meta">
+                                    {{ card.card_type|title }} ending {{ card.last4 }} &middot; Expires {{ card.expiry_month }}/{{ card.expiry_year }}
+                                </div>
+                                <div class="meta">{{ card.card_holder_name }}</div>
+                            </div>
+                            <form class="inline-form" method="post" action="{% url 'delete-card-page' card.id %}">
+                                {% csrf_token %}
+                                <button class="button danger" type="submit">Delete</button>
+                            </form>
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="empty">No cards saved yet.</div>
+            {% endif %}
+        </section>
+    </div>
+</div>
 {% endblock %}

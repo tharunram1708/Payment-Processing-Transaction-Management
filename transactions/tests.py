@@ -409,6 +409,20 @@ class TransactionApiTests(TestCase):
         self.assertTemplateUsed(response, "transactions/cards.html")
         self.assertContains(response, "************1111")
         self.assertNotContains(response, "4111111111111111")
+        self.assertContains(response, "Payment Dashboard")
+        self.assertContains(response, "Recent Transactions")
+        self.assertNotContains(response, "Admin Panel")
+        self.assertNotContains(response, "CVV")
+
+    def test_dashboard_renders_admin_panel_for_staff(self):
+        self.client.force_login(self.admin_user)
+
+        response = self.client.get(reverse("card-list-page"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Admin Panel")
+        self.assertContains(response, reverse("admin:index"))
+        self.assertContains(response, reverse("admin:transactions_transaction_changelist"))
 
     def test_card_template_form_adds_masked_card(self):
         self.client.force_login(self.user)
@@ -428,6 +442,60 @@ class TransactionApiTests(TestCase):
         card = SavedCard.objects.get(user=self.user)
         self.assertEqual(card.masked_card_number, "************1111")
         self.assertEqual(card.last4, "1111")
+
+    def test_dashboard_payment_form_creates_transaction(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("card-list-page"),
+            data={
+                "form_action": "make_payment",
+                "amount": "250.00",
+                "currency": "inr",
+                "payment_card_number": "4111111111111111",
+                "payment_card_holder_name": "User One",
+                "payment_expiry_month": 12,
+                "payment_expiry_year": timezone.localdate().year + 1,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        transaction = Transaction.objects.filter(user=self.user).latest("created_at")
+        self.assertEqual(transaction.amount, Decimal("250.00"))
+        self.assertEqual(transaction.currency, "INR")
+        self.assertEqual(transaction.status, Transaction.PaymentStatus.SUCCESS)
+        self.assertEqual(transaction.masked_card_number, "************1111")
+
+    def test_fastapi_payment_accepts_request_without_cvv(self):
+        payload = self._fastapi_payment_payload(user_id=self.user.id)
+        del payload["card"]["cvv"]
+        payment = PaymentRequest(**payload)
+
+        response = fastapi_make_payment(payment, user=self.user)
+
+        record = Transaction.objects.get(transaction_id=response.transaction_id)
+        self.assertEqual(record.status, Transaction.PaymentStatus.SUCCESS)
+        self.assertEqual(record.masked_card_number, "************1111")
+
+    def test_dashboard_payment_history_export_requires_login(self):
+        response = self.client.get(reverse("payment-history-export"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login-page"), response["Location"])
+
+    def test_dashboard_payment_history_export_returns_only_own_transactions(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("payment-history-export"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertEqual(response["Content-Disposition"], 'attachment; filename="payment-history.csv"')
+        content = response.content.decode()
+        self.assertIn("transaction_id,amount,currency,status,masked_card_number,message,created_at,updated_at", content)
+        self.assertIn(str(self.transaction.transaction_id), content)
+        self.assertIn("************1111", content)
+        self.assertNotIn("************2222", content)
 
     def test_admin_daily_summary_requires_admin_login(self):
         response = self.client.get(reverse("admin:transactions_transaction_daily_summary"))

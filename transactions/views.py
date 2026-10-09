@@ -1,3 +1,4 @@
+import csv
 import json
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -11,14 +12,16 @@ from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.http import require_POST
+from pydantic import ValidationError as PydanticValidationError
 
+from models import PaymentRequest
 from transactions.authentication import create_access_token
 from transactions.models import RevokedToken, SavedCard, Transaction
 from transactions.serializers import serialize_saved_card, serialize_transaction, serialize_user
@@ -83,20 +86,60 @@ def logout_page(request):
 @require_http_methods(["GET", "POST"])
 def card_list_page(request):
     if request.method == "POST":
-        card_data, error = _validate_card_payload(request.POST)
-        if error:
-            messages.error(request, error)
+        form_action = request.POST.get("form_action", "save_card")
+        if form_action == "make_payment":
+            payment, error = _validate_payment_payload(request.POST, request.user)
+            if error:
+                messages.error(request, error)
+            else:
+                from services import process_payment
+
+                response = process_payment(payment, user=request.user)
+                if response.status == Transaction.PaymentStatus.SUCCESS:
+                    messages.success(request, response.message)
+                else:
+                    messages.error(request, response.message)
+                return redirect("card-list-page")
         else:
-            SavedCard.objects.create(user=request.user, **card_data)
-            messages.success(request, "Card saved.")
-            return redirect("card-list-page")
+            card_data, error = _validate_card_payload(request.POST)
+            if error:
+                messages.error(request, error)
+            else:
+                SavedCard.objects.create(user=request.user, **card_data)
+                messages.success(request, "Card saved.")
+                return redirect("card-list-page")
+
+    cards = SavedCard.objects.filter(user=request.user)
+    transactions = Transaction.objects.filter(user=request.user)
+    successful_payments = transactions.filter(status=Transaction.PaymentStatus.SUCCESS)
+    admin_stats = None
+    if request.user.is_staff:
+        user_model = get_user_model()
+        all_transactions = Transaction.objects.all()
+        admin_stats = {
+            "user_count": user_model.objects.count(),
+            "card_count": SavedCard.objects.count(),
+            "transaction_count": all_transactions.count(),
+            "failed_count": all_transactions.filter(status=Transaction.PaymentStatus.FAILED).count(),
+        }
 
     return render(
         request,
         "transactions/cards.html",
         {
-            "cards": SavedCard.objects.filter(user=request.user),
+            "admin_stats": admin_stats,
+            "cards": cards,
             "current_year": timezone.localdate().year,
+            "recent_transactions": transactions[:8],
+            "stats": {
+                "card_count": cards.count(),
+                "transaction_count": transactions.count(),
+                "success_count": successful_payments.count(),
+                "total_success_amount": sum(
+                    (transaction.amount for transaction in successful_payments),
+                    Decimal("0.00"),
+                ),
+            },
         },
     )
 
@@ -110,6 +153,43 @@ def delete_card_page(request, card_id):
     else:
         messages.error(request, "Card not found.")
     return redirect("card-list-page")
+
+
+@login_required(login_url="login-page")
+@require_GET
+def export_payment_history_csv(request):
+    transactions = Transaction.objects.filter(user=request.user).order_by("-created_at")
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="payment-history.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow(
+        [
+            "transaction_id",
+            "amount",
+            "currency",
+            "status",
+            "masked_card_number",
+            "message",
+            "created_at",
+            "updated_at",
+        ]
+    )
+    for transaction in transactions:
+        writer.writerow(
+            [
+                transaction.transaction_id,
+                transaction.amount,
+                transaction.currency,
+                transaction.status,
+                transaction.masked_card_number,
+                transaction.message,
+                transaction.created_at.isoformat(),
+                transaction.updated_at.isoformat(),
+            ]
+        )
+
+    return response
 
 
 @csrf_exempt
@@ -459,6 +539,27 @@ def _validate_card_payload(payload: dict) -> tuple[dict, str | None]:
         "expiry_month": expiry_month,
         "expiry_year": expiry_year,
     }, None
+
+
+def _validate_payment_payload(payload: dict, user) -> tuple[PaymentRequest | None, str | None]:
+    payment_payload = {
+        "user_id": user.id,
+        "amount": str(payload.get("amount", "")).strip(),
+        "currency": str(payload.get("currency", "INR")).strip() or "INR",
+        "card": {
+            "card_number": str(payload.get("payment_card_number", "")).strip(),
+            "card_holder_name": str(payload.get("payment_card_holder_name", "")).strip(),
+            "expiry_month": payload.get("payment_expiry_month"),
+            "expiry_year": payload.get("payment_expiry_year"),
+        },
+    }
+
+    try:
+        return PaymentRequest(**payment_payload), None
+    except PydanticValidationError as exc:
+        first_error = exc.errors()[0] if exc.errors() else {}
+        message = first_error.get("msg", "Payment details are invalid.")
+        return None, str(message).removeprefix("Value error, ")
 
 
 def _passes_luhn_check(card_number: str) -> bool:

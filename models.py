@@ -22,7 +22,7 @@ class CardDetails(BaseModel):
     card_holder_name: str = Field(..., min_length=2, max_length=100, examples=["Tharun Kumar"])
     expiry_month: int = Field(..., ge=1, le=12, examples=[12])
     expiry_year: int = Field(..., ge=2000, le=2100, examples=[2030])
-    cvv: str = Field(..., min_length=3, max_length=4, pattern=r"^\d{3,4}$", examples=["123"])
+    cvv: str | None = Field(None, min_length=3, max_length=4, pattern=r"^\d{3,4}$", examples=["123"])
 
     @field_validator("card_number")
     @classmethod
