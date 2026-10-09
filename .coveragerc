@@ -1,0 +1,15 @@
+[run]
+source =
+    .
+omit =
+    .venv/*
+    manage.py
+    transaction_project/asgi.py
+    transaction_project/wsgi.py
+    */migrations/*
+    */__pycache__/*
+
+[report]
+fail_under = 50
+show_missing = True
+skip_covered = True

@@ -1,0 +1,24 @@
+{% extends "transactions/base.html" %}
+
+{% block title %}Login | Card Management{% endblock %}
+
+{% block content %}
+<section class="panel narrow">
+    <h1>Login</h1>
+    <p class="muted">Access your saved cards.</p>
+
+    <form method="post">
+        {% csrf_token %}
+        <div class="field">
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" value="{{ form.username }}" required>
+        </div>
+        <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="button full" type="submit">Login</button>
+    </form>
+    <p class="muted">No account? <a href="{% url 'register-page' %}">Create one</a>.</p>
+</section>
+{% endblock %}

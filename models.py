@@ -53,6 +53,7 @@ class CardDetails(BaseModel):
 
 
 class PaymentRequest(BaseModel):
+    user_id: int = Field(..., gt=0, examples=[1], description="Django user ID that owns this payment.")
     amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2, examples=["1499.00"])
     currency: str = Field(..., min_length=3, max_length=3, examples=["INR"])
     card: CardDetails

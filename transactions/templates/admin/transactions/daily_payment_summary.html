@@ -1,0 +1,55 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{{ transaction_changelist_url }}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; Daily payment summary
+</div>
+{% endblock %}
+
+{% block content %}
+<div id="content-main">
+  <form method="get" style="margin-bottom: 1rem;">
+    <label for="summary-date">Date:</label>
+    <input id="summary-date" type="date" name="date" value="{{ selected_date|date:'Y-m-d' }}">
+    <input type="submit" value="Show summary">
+  </form>
+
+  {% if date_error %}
+    <p class="errornote">{{ date_error }}</p>
+  {% endif %}
+
+  <table>
+    <caption>Payments for {{ selected_date|date:"Y-m-d" }}</caption>
+    <tbody>
+      <tr>
+        <th scope="row">Total transactions</th>
+        <td>{{ summary.total_transactions }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Successful payments</th>
+        <td>{{ summary.successful_payments }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Failed payments</th>
+        <td>{{ summary.failed_payments }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Pending payments</th>
+        <td>{{ summary.pending_payments }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Total payment amount</th>
+        <td>{{ summary.total_payment_amount|floatformat:2 }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="margin-top: 1rem;">
+    <a href="{{ transaction_changelist_url }}" class="button">Back to transactions</a>
+    <a href="{{ export_url }}" class="button">Export all CSV</a>
+  </p>
+</div>
+{% endblock %}
